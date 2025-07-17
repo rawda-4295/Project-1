@@ -1,0 +1,477 @@
+---
+title: "Project 1: NYC Community Health Survey 2020: HIV Testing and Condom Use"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+author: "Rawda Alaswad"
+date: "2025-07-15"
+---
+
+# Executive Summary
+
+This report analyzes data from the 2020 New York City Community Health Survey (CHS) to examine demographic and behavioral factors associated with HIV testing among adults in NYC. The survey included approximately 10,000 adults, with data collected via a cross-sectional, self-reported telephone survey in multiple languages.
+
+Key variables analyzed include race/ethnicity, age group, HIV testing in the past 12 months, condom use, and number of sex partners. Data were cleaned and recoded for clarity, and survey weights were applied to account for the complex sampling design.
+
+Descriptive analyses showed that the largest racial/ethnic group was White/North African/Middle Eastern, non-Hispanic, and most participants were aged 25–64. Only 28.6% of respondents reported being tested for HIV in the past year, and 17.3% reported condom use at last sex.
+
+Logistic regression models were used to assess associations between HIV testing and behavioral/demographic factors. In un-adjusted analysis, condom use was significantly associated with higher odds of HIV testing. However, after adjusting for age group, race/ethnicity, and number of sex partners, this association was no longer statistically significant. Black, Hispanic, and Other non-Hispanic participants, as well as those with more sex partners, were more likely to have been tested for HIV, while older age groups were less likely.
+
+These findings highlight disparities in HIV testing and suggest the need for targeted public health interventions to increase testing rates among specific demographic groups in NYC.
+
+# 1. Introduction
+
+This report utilizes data from the 2020 New York City Community Health Survey (CHS) to explore patterns of HIV testing among adults in NYC. The analysis focuses on the relationships between HIV testing and key variables such as race/ethnicity, age group, condom use, and number of sex partners. By identifying groups with lower testing rates and examining associated behaviors, this study aims to provide actionable insights for improving HIV prevention and care in NYC.
+
+# 2. Data Description
+
+**Source:** The data used in this project is the New York City Community Health Survey (CHS) of 2020, conducted annually by the NYC Department of Health and Mental Hygiene (DOHMH). <https://www.nyc.gov/site/doh/data/data-sets/community-health-survey-public-use-data.page>
+
+**Sample Size:** The survey includes approximately 10,000 adults aged 18 and older, residing in New York City and its five boroughs.
+
+**Collection Method:** Data were collected via a cross-sectional, self-reported telephone survey. Interviews were conducted in English, Spanish, Russian, and Chinese (Mandarin and Cantonese).
+
+**Variables Key:**
+
+| Original Variable Name | Recoded Name/ Label | Description |
+|------------------------|------------------------|------------------------|
+| newrace | Race/Ethnicity | Self-identified race/ethnicity of participant |
+| agegroup | Age Group | Age group in years |
+| hiv12months20 | Tested for HIV (Past 12 Months) | Whether participant was tested for HIV in past 12 months |
+| condom20 | Condom Use (Past 12 Months) | Whether participant used a condom the last time they had sex |
+| sexpartner | Number of Sex Partners (Past 12 Months) | Number of sex partners in the past 12 months |
+
+**Statistical Methods:** Survey weights and design variables were used to account for the complex sampling design. Descriptive statistics, summary tables, and visualizations were produced. Logistic regression models (both unadjusted and adjusted for confounders) were fitted using the 'survey' package in R to assess associations between HIV testing and behavioral/ demographic factors.
+
+**Libraries Used:**
+
+```{r, message=FALSE, warning=FALSE}
+library(haven)
+library(dplyr)
+library(survey)
+library(Hmisc)
+library(table1)
+library(ggplot2)
+library(forcats)
+library(broom)
+library(knitr)
+library(kableExtra)
+library(viridis)
+```
+
+# 3. Data Preparation
+
+## 3.1 Import Data
+
+-   The data was downlaoded on to local harddrive from the NYC CHS website (2020 SAS Data File named chs2020_public.sas7bdat). The data set was assigned the named chs20 for this project.
+
+```{r, warning=FALSE}
+library(haven)
+chs20 <- read_sas("C:/Users/rawda/Desktop/chs2020_public.sas7bdat", 
+    NULL)
+
+View(chs20)
+```
+
+## 3.2 Assign and Create Variables
+
+-   Assigning numeric values to the categories of each factor to reocde them for the epi table. The recoded data set is called chs20_recode.
+
+```{r, warning=FALSE}
+library(dplyr)
+
+chs20_recode <- chs20 %>%
+  mutate(
+    newrace = recode_factor(newrace,
+      `1` = "White/N Afri/MidEastern, non-Hispanic",
+      `2` = "Black, non-Hispanic",
+      `3` = "Hispanic",
+      `4` = "Asian/PI, non-Hispanic",
+      `5` = "Other, non-Hispanic"
+    ),
+    agegroup = recode_factor(agegroup,
+      `1` = "18-24",
+      `2` = "25-44",
+      `3` = "45-64",
+      `4` = "65+"
+    ),
+    hiv12months20 = recode_factor(hiv12months20,
+      `2` = "No",
+      `1` = "Yes"
+    ),
+    condom20 = recode_factor(condom20,
+      `2` = "No",
+      `1` = "Yes"
+    ),
+    sexpartner = factor(sexpartner, ordered = TRUE),
+    strata = as.character(strata)
+  ) %>%
+  rename(
+    Race_Ethnicity = newrace,
+    Age_Group = agegroup,
+    Tested_HIV_12mo = hiv12months20,
+    Condom_Use_12mo = condom20,
+    Num_Sex_Partners_12mo = sexpartner
+  )
+```
+
+## 3.3 Data Cleaning
+
+-   The recoded data was checked to ensure that the recoding process was completed correctly and that all variables and cases are present.
+
+```{r, warning=FALSE}
+vars_of_interest <- c("Race_Ethnicity", "Age_Group", "Tested_HIV_12mo", "Condom_Use_12mo", "Num_Sex_Partners_12mo")
+
+colSums(is.na(chs20_recode[vars_of_interest]))
+
+for (var in vars_of_interest) {
+  print(var)
+  print(table(chs20_recode[[var]], useNA = "ifany"))
+}
+```
+
+# 4. Exploratory Data Analysis (EDA)
+
+## 4.1. Summary Table
+
+```{r, warning=FALSE}
+# Creating Survey
+library(survey)
+chs.dsgn <-
+  svydesign(
+    ids = ~ 1,
+    strata = ~ strata,
+    weights =  ~ wt21_dual, # match to current year dataset
+    data = chs20_recode, # match to current year dataset 
+    nest = TRUE,
+    na.rm = TRUE
+  )
+```
+
+```{r, warning=FALSE}
+# Create a Table
+library(Hmisc)
+
+label(chs20_recode$Race_Ethnicity) <- "Race/Ethnicity"
+label(chs20_recode$Age_Group) <- "Age Group"
+label(chs20_recode$Tested_HIV_12mo) <- "Tested for HIV (Past 12 Months)"
+label(chs20_recode$Condom_Use_12mo) <- "Condom Use (Past 12 Months)"
+label(chs20_recode$Num_Sex_Partners_12mo) <- "Number of Sex Partners (Past 12 Months)"
+
+
+library(table1)
+table1(~ Race_Ethnicity + Age_Group + Tested_HIV_12mo + Condom_Use_12mo + Num_Sex_Partners_12mo,
+  data = chs20_recode,
+  overall = "Overall Summary",
+  title = "Epidemiological Summary Table"
+)
+
+```
+
+## 4.2 Bar Charts
+
+```{r, warning=FALSE}
+library(ggplot2)
+
+var_labels <- c(
+  Race_Ethnicity = "Race/Ethnicity",
+  Age_Group = "Age Group",
+  Tested_HIV_12mo = "Tested for HIV (Past 12 Months)",
+  Condom_Use_12mo = "Condom Use (Past 12 Months)",
+  Num_Sex_Partners_12mo = "Number of Sex Partners (Past 12 Months)"
+)
+
+cat_vars <- names(var_labels)
+
+for (var in cat_vars) {
+  p <- ggplot(chs20_recode, aes_string(x = var)) +
+    geom_bar(fill = "light blue") +
+    labs(
+      title = paste("Distribution of", var_labels[[var]]),
+      x = var_labels[[var]],
+      y = "Count"
+    ) +
+    theme_minimal()
+  
+  print(p)
+  ggsave(filename = paste0(var, "_bar_chart.png"), plot = p, width = 6, height = 4)
+}
+```
+
+## 4.3 Pie Charts
+
+```{r, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+
+var_labels <- c(
+  Race_Ethnicity = "Race/Ethnicity",
+  Age_Group = "Age Group",
+  Tested_HIV_12mo = "Tested for HIV (Past 12 Months)",
+  Condom_Use_12mo = "Condom Use (Past 12 Months)",
+  Num_Sex_Partners_12mo = "Number of Sex Partners (Past 12 Months)"
+)
+
+cat_vars <- names(var_labels)
+
+for (var in cat_vars) {
+  pie_data <- chs20_recode %>%
+    count(!!sym(var)) %>%
+    mutate(perc = n / sum(n) * 100,
+           label = paste0(!!sym(var), " (", round(perc, 1), "%)"))
+  
+  p <- ggplot(pie_data, aes(x = "", y = n, fill = !!sym(var))) +
+    geom_col(width = 1) +
+    coord_polar(theta = "y") +
+    labs(
+      title = paste("Distribution of", var_labels[[var]]),
+      fill = var_labels[[var]]
+    ) +
+    theme_void() +
+    geom_text(aes(label = label), position = position_stack(vjust = 0.5), size = 3)
+  
+  print(p)
+  ggsave(filename = paste0(var, "_pie_chart.png"), plot = p, width = 6, height = 6)
+}
+```
+
+## 4.4 Box Plots
+
+```{r, warning=FALSE}
+library(ggplot2)
+library(forcats)
+library(dplyr)
+library(viridis)
+
+var_labels <- c(
+  Race_Ethnicity = "Race/Ethnicity",
+  Age_Group = "Age Group",
+  Tested_HIV_12mo = "Tested for HIV (Past 12 Months)",
+  Condom_Use_12mo = "Condom Use (Past 12 Months)",
+  Num_Sex_Partners_12mo = "Number of Sex Partners (Past 12 Months)"
+)
+
+fill_vars <- c("Condom_Use_12mo", "Race_Ethnicity", "Num_Sex_Partners_12mo")
+
+chs20_recode$Age_Group <- forcats::fct_explicit_na(chs20_recode$Age_Group, na_level = "Missing")
+chs20_recode$Age_Group <- factor(
+  chs20_recode$Age_Group,
+  levels = c("18-24", "25-44", "45-64", "65+", "Missing")
+)
+
+for (fill_var in fill_vars) {
+  plot_data <- chs20_recode %>%
+    group_by(Tested_HIV_12mo, .data[[fill_var]], Age_Group) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(Tested_HIV_12mo, Age_Group) %>%
+    mutate(perc = n / sum(n) * 100)
+  
+  p <- ggplot(plot_data, aes(x = Tested_HIV_12mo, y = n, fill = .data[[fill_var]])) +
+    geom_bar(stat = "identity", position = "stack", color = "black") +
+    facet_grid(. ~ Age_Group, labeller = label_value) +
+    labs(
+      title = paste("HIV Testing by", var_labels[[fill_var]]),
+      subtitle = "Stratified by Age Group",
+      x = var_labels[["Tested_HIV_12mo"]],
+      y = "Number of Participants",
+      fill = var_labels[[fill_var]]
+    ) +
+    scale_fill_viridis_d(option = "D") +  # Use "D" for viridis, not "Set1"
+    theme_bw()
+  
+  print(p)
+  ggsave(filename = paste0("HIV_Testing_by_", fill_var, "_bar_chart.png"), plot = p, width = 7, height = 4)
+}
+```
+
+### 4.4.1 Interactive Boxplot
+
+-   The interactive features of the following plots are only available when running this R Markdown file interactively in RStudio. These features will not be visible in the knitted HTML, PDF, or Word output.
+
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(forcats)
+library(dplyr)
+library(plotly)
+library(viridis)
+
+var_labels <- c(
+  Race_Ethnicity = "Race/Ethnicity",
+  Age_Group = "Age Group",
+  Tested_HIV_12mo = "Tested for HIV (Past 12 Months)",
+  Condom_Use_12mo = "Condom Use (Past 12 Months)",
+  Num_Sex_Partners_12mo = "Number of Sex Partners (Past 12 Months)"
+)
+
+fill_vars <- c("Condom_Use_12mo", "Race_Ethnicity", "Num_Sex_Partners_12mo")
+
+chs20_recode$Age_Group <- forcats::fct_explicit_na(chs20_recode$Age_Group, na_level = "Missing")
+chs20_recode$Age_Group <- factor(
+  chs20_recode$Age_Group,
+  levels = c("18-24", "25-44", "45-64", "65+", "Missing")
+)
+
+for (fill_var in fill_vars) {
+  plot_data <- chs20_recode %>%
+    group_by(Tested_HIV_12mo, .data[[fill_var]], Age_Group) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(Tested_HIV_12mo, Age_Group) %>%
+    mutate(perc = n / sum(n) * 100)
+  
+  p <- ggplot(plot_data, aes(x = Tested_HIV_12mo, y = n, fill = .data[[fill_var]],
+                             text = paste0(
+                               var_labels[[fill_var]], ": ", .data[[fill_var]], "<br>",
+                               "Count: ", n, "<br>",
+                               "Percent: ", round(perc, 1), "%"
+                             ))) +
+    geom_bar(stat = "identity", position = "stack", color = "black") +
+    facet_grid(. ~ Age_Group, labeller = label_value) +
+    labs(
+      title = paste("HIV Testing by", var_labels[[fill_var]]),
+      subtitle = "Stratified by Age Group",
+      x = var_labels[["Tested_HIV_12mo"]],
+      y = "Number of Participants",
+      fill = var_labels[[fill_var]]
+    ) +
+    scale_fill_viridis_d(option = "Set1") +
+    theme_bw()
+  
+  interactive_plot <- ggplotly(p, tooltip = "text")
+  print(interactive_plot)
+}
+```
+
+## 4.5 Summary Report
+
+**Race/Ethnicity:** The largest group was White/North African/Middle Eastern, non-Hispanic (32.6%), followed by Hispanic (28.0%), Black, non-Hispanic (20.9%), Asian/Pacific Islander, non-Hispanic (15.3%), and Other, non-Hispanic (3.3%).
+
+**Age Group:** Most participants were aged 25–44 (36.3%) or 45–64 (33.6%), with smaller proportions aged 65+ (21.9%) and 18–24 (8.0%).
+
+**HIV Testing (Past 12 Months):** 28.6% reported being tested for HIV in the past year, while 69.7% had not been tested.
+
+**Condom Use (Past 12 Months):** 17.3% reported using a condom the last time they had sex, 40.7% did not, and 42.0% had missing data for this question.
+
+**Number of Sex Partners (Past 12 Months):** Nearly half (48.5%) reported having 2 sex partners, 30.6% had 1 partner, and smaller proportions reported 3 (4.3%) or 4 (6.8%) partners. About 9.8% had missing data for this variable.
+
+# 5. Statistical Modeling
+
+## 5.1 Unadjusted Logistic Regression
+
+This step was done to highlight the effect of confounded on p-value significance. As you can see below there is an extremely signifncant statistical association between condom HIV testing and condom use. Condom use in the past 12 months was significantly associated with higher odds of HIV testing in the past year (p \< 0.001).
+
+```{r, warning=FALSE}
+library(survey)
+fit_unadj <- svyglm(Tested_HIV_12mo ~ Condom_Use_12mo, 
+                    design = chs.dsgn, 
+                    family = quasibinomial())
+summary(fit_unadj)
+```
+
+## 5.2 Adjusted Logistic Regression
+
+After adjusting for age group, race/ethnicity, and number of sex partners, condom use was no longer significantly associated with HIV testing in the past year (p = 0.34).
+
+```{r, warning=FALSE}
+fit_adj <- svyglm( Tested_HIV_12mo ~ 
+                     Condom_Use_12mo + Age_Group + Race_Ethnicity + Num_Sex_Partners_12mo, 
+                     design = chs.dsgn, 
+                     family = quasibinomial())
+summary(fit_adj)
+```
+
+## 5.3 Adjusted LRM Table
+
+```{r, warning=FALSE}
+library(broom)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+var_labels <- c(
+  Condom_Use_12mo = "Condom Use (Past 12 Months)",
+  Age_Group = "Age Group",
+  Race_Ethnicity = "Race/Ethnicity",
+  Num_Sex_Partners_12mo = "Number of Sex Partners (Past 12 Months)"
+)
+
+fit_adj_tidy <- tidy(fit_adj, exponentiate = TRUE, conf.int = TRUE)
+
+pretty_term <- function(term) {
+  if (term == "(Intercept)") return("Intercept")
+  if (grepl("Condom_Use_12moYes", term)) return("Condom Use (Past 12 Months): Yes")
+  if (grepl("Age_Group", term)) return(paste0("Age Group: ", sub("Age_Group", "", term)))
+  if (grepl("Race_Ethnicity", term)) return(paste0("Race/Ethnicity: ", sub("Race_Ethnicity", "", term)))
+  if (grepl("Num_Sex_Partners_12mo.L", term)) return("Number of Sex Partners (Past 12 Months): Linear")
+  if (grepl("Num_Sex_Partners_12mo.Q", term)) return("Number of Sex Partners (Past 12 Months): Quadratic")
+  return(term)
+}
+
+fit_adj_tidy <- fit_adj_tidy %>%
+  mutate(
+    term = sapply(term, pretty_term),
+    across(where(is.numeric), ~round(., 3)),
+    p.value = ifelse(
+      p.value < 0.001,
+      "0.000",
+      sprintf("%.3f", p.value)
+    ),
+    p.value = ifelse(as.numeric(p.value) < 0.05, paste0(p.value, " *"), p.value)
+  )
+
+fit_adj_tidy %>%
+  select(term, estimate, std.error, statistic, p.value, conf.low, conf.high) %>%
+  kable(
+    caption = "Adjusted Logistic Regression Results: Odds Ratios and 95% Confidence Intervals",
+    col.names = c("Variable", "Odds Ratio", "Std. Error", "z value", "p-value", "CI Lower", "CI Upper"),
+    align = "c"
+  ) %>%
+  kable_styling(full_width = FALSE, position = "center", bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+# 6. Discussion
+
+**LRM:** Without accounting for hypothesized confounders (age, race, \# of partners) the association of HIV testing and condom usage is significant. In relation to adjusting for the hypothesized confounders we can see that participants who used condoms the last time the had sex compared to those who didn't had a 0.09951 increase in the log odds of having HIV testing with in the last 12 months. However, the positive association is not significant as the p-value is 0.3433.
+
+# 7. Conclusion
+
+Participants are more likely to have HIV testing done if they identify as: Black- non-Hispanic, Hispanic, or Other-non-Hispanic, compared to the other ethno-racial groups. Survey participants were less likely to HIV testing done if they were aged: 45-64, 65+ as opposed to the other age groups. Furthermore, there is a positive linear relationship between the number of sex partners and HIV testing meaning the more sex partners someone has the more likely a participant is to have HIV testing done.
+
+# 8. Refrences and Resources
+
+**Disclaimer:** This project was completed as a part of my Bio-statistics II course with Dr. Levi Waldron. This was submitted under Assignment 1 for the class however, this is an updated and completely reformed version of the assignment with the visual models and commentary being an addition. Materials and set up for this project are entirely organized by Dr. Waldron who is a Professor at City University of New York School of Public Health and Health Policy, and the Department Chairperson of Epidemiology and Bio-statistics.
+
+**Libraries Used** 
+
+- Wickham, H. & Miller, E. (2024). haven: Import and Export 'SPSS', 'Stata' and 'SAS' Files. R package version 2.5.4. <https://CRAN.R-project.org/package=haven> 
+
+- Wickham, H., François, R., Henry, L., & Müller, K. (2023). dplyr: A Grammar of Data Manipulation. R package version 1.1.4. <https://CRAN.R-project.org/package=dplyr> 
+
+- Lumley, T. (2024). survey: analysis of complex survey samples. R package version 4.3-2. <https://CRAN.R-project.org/package=survey> 
+
+- Harrell, F.E. Jr. (2024). Hmisc: Harrell Miscellaneous. R package version 5.1-1. <https://CRAN.R-project.org/package=Hmisc> 
+
+- Rich, B. (2023). table1: Tables of Descriptive Statistics in HTML. R package version 1.4.4. <https://CRAN.R-project.org/package=table1> 
+
+- Wickham, H. (2016). ggplot2: Elegant Graphics for Data Analysis. Springer-Verlag New York. <https://ggplot2.tidyverse.org/> 
+
+- Wickham, H. (2024). forcats: Tools for Working with Categorical Variables (Factors). R package version 1.0.1. <https://CRAN.R-project.org/package=forcats> 
+
+- Robinson, D., Hayes, A., & Couch, S. (2024). broom: Convert Statistical Objects into Tidy Tibbles. R package version 1.0.5. <https://CRAN.R-project.org/package=broom> 
+
+- Xie, Y. (2024). knitr: A General-Purpose Package for Dynamic Report Generation in R. R package version 1.46. <https://yihui.org/knitr/> 
+
+- Zhu, H. (2024). kableExtra: Construct Complex Table with 'kable' and Pipe Syntax. R package version 1.4.0. <https://CRAN.R-project.org/package=kableExtra> 
+
+- Garnier, S. (2024). viridis: Colorblind-Friendly Color Maps for R. R package version 0.6.5. <https://CRAN.R-project.org/package=viridis>
+
+
+
+
+
+
+
+
+
+
+
