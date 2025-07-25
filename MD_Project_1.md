@@ -434,6 +434,14 @@ for (fill_var in box_vars) {
 
 ![](MD_Project_1_files/figure-markdown_github/unnamed-chunk-9-1.png)![](MD_Project_1_files/figure-markdown_github/unnamed-chunk-9-2.png)![](MD_Project_1_files/figure-markdown_github/unnamed-chunk-9-3.png)
 
+![](Visuals/HIV_Testing_by_Condom_Use_Stacked.png)
+
+![](Visuals/HIV_Testing_by_Sex_Partners_Stacked.png)
+
+![](Visuals/HIV_Testing_by_Race_Stacked.png)
+
+![](Visuals/HIV_Testing_by_Age_Stacked.png)
+
 ![](Visuals/HIV_Testing_by_Condom_Use_bar_chart.png)
 ![](Visuals/HIV_Testing_by_Race_Ethnicity_bar_chart.png)
 ![](Visuals/HIV_Testing_by_Num_Sex_Partners_bar_chart.png)
@@ -565,6 +573,13 @@ summary(fit_adj)
 <img src="Visuals/adjusted_regression_table.png"
 alt="Adjusted Regression Table" />
 <figcaption aria-hidden="true">Adjusted Regression Table</figcaption>
+</figure>
+
+<figure>
+<img src="Visuals/HIV_Testing_Forest_Plot.png"
+alt="Forst Plot for Adjusted Regression Table" />
+<figcaption aria-hidden="true">Forst Plot for Adjusted Regression
+Table</figcaption>
 </figure>
 
 ### 5.3 Adjusted LRM Table
